@@ -66,6 +66,12 @@ impl Ui {
     fn end(&mut self) {}
 }
 
+#[derive(PartialEq)]
+enum Focus {
+    Calendar,
+    Date,
+}
+
 fn main() {
     initscr();
     noecho();
@@ -91,18 +97,37 @@ fn main() {
     let mut curs_x:u32 = 0;
     let mut curs_y:u32 = 0;
 
+    let mut first = true;
+    let mut date_changed = false;
+
+    let mut month: u32 = 1;
+    let mut year: i32 = 1;
+    let mut curr_day:u32 = 0;
+
+    let mut focus: Focus = Focus::Calendar;
+
     while !quit {
         erase();
-
         let now = Local::now();
-        let month = chrono::Month::from_u32(now.month()).unwrap();
+
+        if first {
+            month = now.month();
+            year = now.year();
+            curr_day = now.day();
+            first = false;
+        }
+
         let start_day = date_format::weekday_to_index(now.with_day(1).unwrap().weekday());
-        let curr_day = now.day();
-        let month_len = date_format::month_length(now.month(), date_format::leap_year(now.year()));
+        let month_len = date_format::month_length(month, date_format::leap_year(year));
 
         ui.begin(0, 0);
         {
-            ui.label_center(&format!("{} {}", month.name(), now.year()), REGULAR_PAIR);
+            let format_month = chrono::Month::from_u32(month).unwrap().name();
+            if focus == Focus::Date {
+                ui.label_center(&format!("{} {}", format_month, year), SELECT_PAIR);
+            } else {
+                ui.label_center(&format!("{} {}", format_month, year), REGULAR_PAIR);
+            }
             ui.label("So Mo Di Mi Do Fr Sa", REGULAR_PAIR);
 
             {
@@ -112,6 +137,7 @@ fn main() {
                 let mut index = 1;
                 while month_len >= index {
 
+
                     if !found_start && start_day == col{
                         found_start = true;
                     }
@@ -120,9 +146,16 @@ fn main() {
                         col += 1;
                         continue;
                     }
-                    if row == curs_x && col == curs_y {
+
+                    if date_changed {
+                        curs_x = row;
+                        curs_y = col;
+                        date_changed = false;
+                    }
+
+                    if row == curs_x && col == curs_y && focus == Focus::Calendar{
                         ui.add_str(&format!("{:0>2}", index), SELECT_PAIR, 1)
-                    } else if index == curr_day {
+                    } else if index == curr_day && month == now.month() && year == now.year() {
                         ui.add_str(&format!("{:0>2}", index), HIGHLIGHT_PAIR, 1);
                         if curs_y.is_zero() {
                             curs_x = row;
@@ -155,25 +188,55 @@ fn main() {
                 quit = true;
             },
             key::ARROW_LEFT => {
-                if curs_y > 1 && days[(curs_x - 1) as usize][(curs_y - 2) as usize] {
+                if curs_y > 1 && days[(curs_x - 1) as usize][(curs_y - 2) as usize] && focus == Focus::Calendar {
                     curs_y -= 1;
+                }
+                if focus == Focus::Date {
+                    year -= 1;
+                   date_changed = true;
                 }
             },
             key::ARROW_RIGHT => {
-                if curs_y < 7 && days[(curs_x - 1) as usize][curs_y as usize] {
+                if curs_y < 7 && days[(curs_x - 1) as usize][curs_y as usize] && focus == Focus::Calendar{
                     curs_y += 1;
+                }
+                if focus == Focus::Date {
+                    year += 1;
+                    date_changed = true;
                 }
             },
             key::ARROW_UP => {
-                if curs_x > 1 && days[(curs_x - 2) as usize][(curs_y - 1) as usize] {
+                if curs_x > 1 && days[(curs_x - 2) as usize][(curs_y - 1) as usize] && focus == Focus::Calendar {
                     curs_x -= 1;
+                }
+                if focus == Focus::Date {
+                    if month >= 12 {
+                        month = 1;
+                    } else {
+                        month += 1;
+                    }
+                    date_changed = true;
                 }
             },
             key::ARROW_DOWN => {
-                if curs_x < 6 && days[curs_x as usize][(curs_y - 1) as usize] {
+                if curs_x < 6 && days[curs_x as usize][(curs_y - 1) as usize] && focus == Focus::Calendar {
                     curs_x += 1;
                 }
+                if focus == Focus::Date {
+                    if month <= 1 {
+                        month = 12;
+                    } else {
+                        month -= 1;
+                    }
+                    date_changed = true;
+                }
             },
+            key::D => {
+                focus = Focus::Date;
+            },
+            key::C => {
+                focus = Focus::Calendar;
+            }
             _ => {
                 addstr(&format!("{:?}", KeyCode(key)));
                 getch();
