@@ -3,6 +3,7 @@ use ncurses::WchResult::KeyCode;
 use ncurses::*;
 use num_traits::cast::FromPrimitive;
 use std::cmp;
+use num_traits::Zero;
 
 mod date_format;
 mod key;
@@ -10,11 +11,14 @@ mod key;
 type Pair = i16;
 
 const REGULAR_PAIR: Pair = 0;
-const HIGHLIGHT_PAIR: Pair = 1;
-const REGULAR_RED_PAIR: Pair = 2;
-const HIGHLIGHT_RED_PAIR: Pair = 3;
-const REGULAR_GREEN_PAIR: Pair = 4;
+const REGULAR_RED_PAIR: Pair = 1;
+const REGULAR_GREEN_PAIR: Pair = 2;
+const HIGHLIGHT_PAIR: Pair = 3;
+const HIGHLIGHT_RED_PAIR: Pair = 4;
 const HIGHLIGHT_GREEN_PAIR: Pair = 5;
+const SELECT_PAIR: Pair = 6;
+const SELECT_RED_PAIR:Pair=7;
+const SELECT_GREEN_PAIR: Pair = 8;
 
 #[derive(Default)]
 struct Ui {
@@ -68,25 +72,34 @@ fn main() {
     curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
 
     start_color();
+
+
     init_pair(REGULAR_PAIR, COLOR_WHITE, COLOR_BLACK);
-    init_pair(REGULAR_GREEN_PAIR, COLOR_GREEN, COLOR_BLACK);
     init_pair(REGULAR_RED_PAIR, COLOR_RED, COLOR_BLACK);
+    init_pair(REGULAR_GREEN_PAIR, COLOR_GREEN, COLOR_BLACK);
     init_pair(HIGHLIGHT_PAIR, COLOR_BLACK, COLOR_WHITE);
-    init_pair(HIGHLIGHT_GREEN_PAIR, COLOR_BLACK, COLOR_GREEN);
     init_pair(HIGHLIGHT_RED_PAIR, COLOR_BLACK, COLOR_RED);
+    init_pair(HIGHLIGHT_GREEN_PAIR, COLOR_BLACK, COLOR_GREEN);
+    init_pair(SELECT_PAIR, COLOR_WHITE, COLOR_CYAN);
+    init_pair(SELECT_RED_PAIR, COLOR_RED, COLOR_CYAN);
+    init_pair(SELECT_GREEN_PAIR, COLOR_GREEN, COLOR_CYAN);
 
     let mut quit = false;
 
     let mut ui = Ui::default();
+    let mut days: Vec<Vec<bool>> = vec![vec![false; 7]; 6];
+    let mut curs_x:u32 = 0;
+    let mut curs_y:u32 = 0;
+
     while !quit {
         erase();
+
         let now = Local::now();
         let month = chrono::Month::from_u32(now.month()).unwrap();
-
         let start_day = date_format::weekday_to_index(now.with_day(1).unwrap().weekday());
         let curr_day = now.day();
-
         let month_len = date_format::month_length(now.month(), date_format::leap_year(now.year()));
+
         ui.begin(0, 0);
         {
             ui.label_center(&format!("{} {}", month.name(), now.year()), REGULAR_PAIR);
@@ -94,32 +107,42 @@ fn main() {
 
             {
                 let mut found_start = false;
-                let mut i = 1;
-                let mut j = 1;
-                while month_len >= i {
-                    if !found_start && start_day == j {
+                let mut row = 1;
+                let mut col = 1;
+                let mut index = 1;
+                while month_len >= index {
+
+                    if !found_start && start_day == col{
                         found_start = true;
                     }
                     if !found_start {
                         ui.add_str("  ", REGULAR_PAIR, 1);
-                        j += 1;
+                        col += 1;
                         continue;
                     }
-                    if i < 10 && i == curr_day {
-                        ui.add_str(&format!("0{}", i), HIGHLIGHT_PAIR, 1);
-                    } else if i > 10 && i == curr_day {
-                        ui.add_str(&format!("{}", i), HIGHLIGHT_PAIR, 1);
-                    } else if i < 10 {
-                        ui.add_str(&format!("0{}", i), REGULAR_PAIR, 1);
-                    } else {
-                        ui.add_str(&format!("{}", i), REGULAR_PAIR, 1);
+                    if row == curs_x && col == curs_y {
+                        ui.add_str(&format!("{:0>2}", index), SELECT_PAIR, 1)
+                    } else if index == curr_day {
+                        ui.add_str(&format!("{:0>2}", index), HIGHLIGHT_PAIR, 1);
+                        if curs_y.is_zero() {
+                            curs_x = row;
+                            curs_y = col;
+                        }
+                    } else{
+                        ui.add_str(&format!("{:0>2}", index), REGULAR_PAIR, 1);
                     }
-                    if j % 7 == 0 {
+                    days[(row - 1) as usize][(col - 1) as usize] = true;
+
+
+                    if col == 7 {
                         ui.row += 1;
                         ui.col = 0;
+                        col = 0;
+                        row += 1;
                     }
-                    j += 1;
-                    i += 1;
+
+                    col += 1;
+                    index += 1;
                 }
             }
         }
@@ -130,7 +153,27 @@ fn main() {
         match key {
             key::Q => {
                 quit = true;
-            }
+            },
+            key::ARROW_LEFT => {
+                if curs_y > 1 && days[(curs_x - 1) as usize][(curs_y - 2) as usize] {
+                    curs_y -= 1;
+                }
+            },
+            key::ARROW_RIGHT => {
+                if curs_y < 7 && days[(curs_x - 1) as usize][curs_y as usize] {
+                    curs_y += 1;
+                }
+            },
+            key::ARROW_UP => {
+                if curs_x > 1 && days[(curs_x - 2) as usize][(curs_y - 1) as usize] {
+                    curs_x -= 1;
+                }
+            },
+            key::ARROW_DOWN => {
+                if curs_x < 6 && days[curs_x as usize][(curs_y - 1) as usize] {
+                    curs_x += 1;
+                }
+            },
             _ => {
                 addstr(&format!("{:?}", KeyCode(key)));
                 getch();
